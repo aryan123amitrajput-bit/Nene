@@ -1,0 +1,6 @@
+{
+  "name": "Nudgel",
+  "description": "An ultra-premium, cloud-native messaging application featuring a dark, futuristic interface with glassmorphism and seamless cloud-based chat syncing.",
+  "requestFramePermissions": ["camera", "microphone"],
+  "majorCapabilities": []
+}

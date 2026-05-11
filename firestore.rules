@@ -1,0 +1,46 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helpers
+    function isSignedIn() { return request.auth != null; }
+    function isOwner(uid) { return isSignedIn() && request.auth.uid == uid; }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+
+    function isValidUser(data) {
+        return data.keys().hasAll(['uid', 'displayName', 'uniqueToken']) &&
+               data.uid is string &&
+               data.displayName is string &&
+               data.uniqueToken is string &&
+               data.uid == request.auth.uid;
+    }
+
+    // Users
+    match /users/{uid} {
+        allow get: if isSignedIn() && isOwner(uid);
+        allow create: if isSignedIn() && isOwner(uid) && isValidUser(incoming());
+        allow update: if isSignedIn() && isOwner(uid) && incoming().diff(existing()).affectedKeys().hasOnly(['displayName']) && incoming().displayName is string;
+    }
+
+    // Chats
+    function isParticipant(participants) {
+        return isSignedIn() && participants.hasAny([request.auth.uid]);
+    }
+
+    match /chats/{chatId} {
+        allow list, get: if isSignedIn() && isParticipant(resource.data.participants);
+        allow create: if isSignedIn() && 
+                         isValidId(chatId) &&
+                         incoming().participants is list && 
+                         incoming().participants.hasAny([request.auth.uid]) &&
+                         incoming().participants.size() == 2;
+    }
+  }
+}
