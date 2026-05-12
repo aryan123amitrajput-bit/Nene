@@ -12,9 +12,13 @@ export default function Login() {
   const handleGoogleLogin = async () => {
     try {
       await signInWithPopup(auth, googleProvider);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Google Login failed', error);
-      alert('Google Login failed: ' + (error as Error).message);
+      if (error.code === 'auth/unauthorized-domain') {
+         alert('Google Login failed: Domain not authorized. Please add your Vercel domain to Firebase Console -> Authentication -> Settings -> Authorized Domains.');
+      } else {
+         alert('Google Login failed: ' + error.message);
+      }
     }
   };
 

@@ -2,18 +2,16 @@ import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
 
-async function startServer() {
-  const app = express();
-  const PORT = 3000;
+const app = express();
 
-  app.use(express.json());
+app.use(express.json());
 
-  // Use the GitHub token from environment
-  const GITHUB_TOKEN = process.env.GITHUB_TOKEN || process.env.GITHUB_PAT || "";
+// Use the GitHub token from environment
+const GITHUB_TOKEN = process.env.GITHUB_TOKEN || process.env.GITHUB_PAT || "";
 
-  // API to append a message to a gist
-  // Creates a new gist if none exists or if it's too large
-  app.post("/api/messages/:chatId", async (req, res) => {
+// API to append a message to a gist
+// Creates a new gist if none exists or if it's too large
+app.post("/api/messages/:chatId", async (req, res) => {
     try {
       const { chatId } = req.params;
       const { message, currentGistId } = req.body; // message: {u: senderId, m: text, t: timestamp}
@@ -159,6 +157,9 @@ async function startServer() {
      }
   });
 
+async function startServer() {
+  const PORT = 3000;
+
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
@@ -179,4 +180,10 @@ async function startServer() {
   });
 }
 
-startServer();
+// Only start the server if this file is run directly (not imported as a module by Vercel)
+import { fileURLToPath } from 'url';
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  startServer();
+}
+
+export default app;
