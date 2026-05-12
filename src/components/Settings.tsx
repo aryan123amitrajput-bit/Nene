@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db, handleFirestoreError, OperationType } from '../firebase';
+import { signOut } from 'firebase/auth';
 import { motion } from 'motion/react';
-import { User, Copy, Info } from 'lucide-react';
+import { User, Copy, Info, LogOut } from 'lucide-react';
 
 export default function Settings() {
   const [profile, setProfile] = useState<any>(null);
@@ -51,6 +52,13 @@ export default function Settings() {
           </button>
         </div>
       </div>
+      <button 
+        onClick={() => signOut(auth)}
+        className="w-full mt-6 flex items-center justify-center gap-2 p-4 bg-red-900/20 text-red-500 rounded-xl hover:bg-red-900/40 transition"
+      >
+        <LogOut size={20} />
+        Logout
+      </button>
     </motion.div>
   );
 }

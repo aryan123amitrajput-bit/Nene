@@ -17,7 +17,8 @@
       "description": "Chat session between users",
       "type": "object",
       "properties": {
-        "participants": { "type": "array" }
+        "participants": { "type": "array" },
+        "gistIds": { "type": "array" }
       },
       "required": ["participants"]
     }
