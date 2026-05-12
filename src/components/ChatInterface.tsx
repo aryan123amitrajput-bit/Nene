@@ -26,6 +26,8 @@ export default function ChatInterface({ chatId, otherUser, onBack }: ChatInterfa
           setGistIds(data.gistIds);
         }
       }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, `chats/${chatId}`);
     });
     return () => unsubscribe();
   }, [chatId]);
@@ -100,13 +102,16 @@ export default function ChatInterface({ chatId, otherUser, onBack }: ChatInterfa
       // If a new gist was created, add it to Firestore
       if (gistId !== currentGistId) {
          const chatRef = doc(db, 'chats', chatId);
-         await updateDoc(chatRef, {
-            gistIds: arrayUnion(gistId)
-         });
+         try {
+           await updateDoc(chatRef, {
+              gistIds: arrayUnion(gistId)
+           });
+         } catch (error) {
+           handleFirestoreError(error, OperationType.UPDATE, `chats/${chatId}`);
+         }
       }
     } catch (error) {
-      console.error(error);
-      // Revert optimistic update ideally, but keep it simple
+      console.error("Gist error:", error);
     }
   };
 

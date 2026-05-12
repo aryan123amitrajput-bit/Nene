@@ -97,6 +97,9 @@ async function startServer() {
 
         if (!postRes.ok) {
            const e = await postRes.text();
+           if (e.includes("Resource not accessible by personal access token")) {
+              throw new Error("Your GitHub Personal Access Token (PAT) does not have the 'gist' scope. Please create a new Classic PAT with the 'gist' scope, or a Fine-grained PAT with 'gists' read/write permissions, and update it in AI Studio Secrets.");
+           }
            throw new Error("Failed to create gist: " + e);
         }
         const createdData = await postRes.json();
