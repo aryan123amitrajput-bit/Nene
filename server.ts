@@ -1,22 +1,27 @@
 import express from "express";
-import { createServer as createViteServer } from "vite";
 import path from "path";
-import BSqlite from "better-sqlite3";
+import { createClient } from "@libsql/client";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import rateLimit from "express-rate-limit";
 
 class DBWrapper {
   private db: any;
-  constructor(filename: string) {
-    this.db = new BSqlite(filename);
+  constructor(url: string, authToken?: string) {
+    this.db = createClient({ url, authToken });
   }
-  async exec(sql: string) { return this.db.exec(sql); }
-  async get(sql: string, params: any[] = []) { return this.db.prepare(sql).get(...params); }
-  async all(sql: string, params: any[] = []) { return this.db.prepare(sql).all(...params); }
+  async exec(sql: string) { return this.db.execute(sql); }
+  async get(sql: string, params: any[] = []) { 
+    const result = await this.db.execute({ sql, args: params });
+    return result.rows[0];
+  }
+  async all(sql: string, params: any[] = []) { 
+    const result = await this.db.execute({ sql, args: params });
+    return result.rows;
+  }
   async run(sql: string, params: any[] = []) { 
-    const info = this.db.prepare(sql).run(...params);
-    return { lastID: info.lastInsertRowid, changes: info.changes };
+    const result = await this.db.execute({ sql, args: params });
+    return { lastID: result.lastInsertRowid ? Number(result.lastInsertRowid) : 0, changes: result.rowsAffected };
   }
 }
 
@@ -39,8 +44,10 @@ let db: DBWrapper;
 let dbInitPromise: Promise<void> | null = null;
 
 async function setupDB() {
-  const dbPath = process.env.VERCEL ? "/tmp/nudgel.db" : "nudgel.db";
-  db = new DBWrapper(dbPath);
+  const dbUrl = process.env.DATABASE_URL || (process.env.VERCEL ? "file:/tmp/nudgel.db" : "file:nudgel.db");
+  const dbAuthToken = process.env.DATABASE_AUTH_TOKEN;
+  
+  db = new DBWrapper(dbUrl, dbAuthToken);
 
   await db.exec(`
     CREATE TABLE IF NOT EXISTS users (
@@ -72,10 +79,15 @@ async function setupDB() {
 // Middleware to ensure DB is initialized
 app.use(async (req, res, next) => {
   if (req.path.startsWith("/api/")) {
-    if (!dbInitPromise) {
-      dbInitPromise = setupDB();
+    try {
+      if (!dbInitPromise) {
+        dbInitPromise = setupDB();
+      }
+      await dbInitPromise;
+    } catch (err: any) {
+      console.error("DB Initialization Error:", err);
+      return res.status(500).json({ error: "Failed to connect to the database", details: err.message });
     }
-    await dbInitPromise;
   }
   next();
 });
@@ -420,6 +432,7 @@ async function startServer() {
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
