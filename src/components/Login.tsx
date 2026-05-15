@@ -16,8 +16,10 @@ export default function Login() {
       console.error('Google Login failed', error);
       if (error.code === 'auth/unauthorized-domain') {
          alert('Google Login failed: Domain not authorized. Please add your Vercel domain to Firebase Console -> Authentication -> Settings -> Authorized Domains.');
+      } else if (error.code === 'auth/operation-not-allowed') {
+         alert('Auth method not allowed. You must enable Google or Email/Password Sign-In inside your Firebase Console -> Authentication -> Sign-in methods.');
       } else {
-         alert('Google Login failed: ' + error.message);
+         alert('Login failed: ' + error.message);
       }
     }
   };
@@ -29,9 +31,13 @@ export default function Login() {
       } else {
         await signInWithEmailAndPassword(auth, email, password);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Auth failed', error);
-      alert('Auth failed: ' + (error as Error).message);
+      if (error.code === 'auth/operation-not-allowed') {
+         alert('Auth method not allowed. You must enable Google or Email/Password Sign-In inside your Firebase Console -> Authentication -> Sign-in methods.');
+      } else {
+         alert('Auth failed: ' + error.message);
+      }
     }
   };
 
