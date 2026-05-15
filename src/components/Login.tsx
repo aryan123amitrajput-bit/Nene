@@ -1,43 +1,34 @@
 import { useState } from 'react';
-import { signInWithPopup, signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
-import { auth, googleProvider } from '../firebase';
 import { motion } from 'motion/react';
 import { MessageSquareText } from 'lucide-react';
+import { fetchWithAuth, setToken } from '../lib/api';
 
-export default function Login() {
-  const [email, setEmail] = useState('');
+export default function Login({ onLogin }: { onLogin: (user: any) => void }) {
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [isRegistering, setIsRegistering] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  const handleGoogleLogin = async () => {
+  const handleAuth = async () => {
+    setLoading(true);
     try {
-      await signInWithPopup(auth, googleProvider);
+      const endpoint = isRegistering ? '/signup' : '/login';
+      const res = await fetchWithAuth(endpoint, {
+        method: 'POST',
+        body: JSON.stringify({ username, password })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error || 'Auth failed');
+        return;
+      }
+      setToken(data.token);
+      onLogin(data.user);
     } catch (error: any) {
-      console.error('Google Login failed', error);
-      if (error.code === 'auth/unauthorized-domain') {
-         alert('Google Login failed: Domain not authorized. Please add your Vercel domain to Firebase Console -> Authentication -> Settings -> Authorized Domains.');
-      } else if (error.code === 'auth/operation-not-allowed') {
-         alert('Auth method not allowed. You must enable Google or Email/Password Sign-In inside your Firebase Console -> Authentication -> Sign-in methods.');
-      } else {
-         alert('Login failed: ' + error.message);
-      }
-    }
-  };
-
-  const handleEmailAuth = async () => {
-    try {
-      if (isRegistering) {
-        await createUserWithEmailAndPassword(auth, email, password);
-      } else {
-        await signInWithEmailAndPassword(auth, email, password);
-      }
-    } catch (error: any) {
-      console.error('Auth failed', error);
-      if (error.code === 'auth/operation-not-allowed') {
-         alert('Auth method not allowed. You must enable Google or Email/Password Sign-In inside your Firebase Console -> Authentication -> Sign-in methods.');
-      } else {
-         alert('Auth failed: ' + error.message);
-      }
+      console.error('Auth request failed', error);
+      alert('Internal Server Error: ' + error.message);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -55,34 +46,26 @@ export default function Login() {
         <p className="text-gray-400 mb-8">Message. Connect. Anywhere.</p>
         
         <input 
-          type="email"
-          placeholder="Enter your email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
+          type="text"
+          placeholder="Enter username"
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
           className="w-full bg-gray-900 border border-gray-800 rounded-xl p-4 text-white mb-4 focus:outline-none focus:ring-2 focus:ring-purple-500"
         />
         <input 
           type="password"
-          placeholder="Enter your password"
+          placeholder="Enter password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           className="w-full bg-gray-900 border border-gray-800 rounded-xl p-4 text-white mb-6 focus:outline-none focus:ring-2 focus:ring-purple-500"
         />
         
         <button 
-          onClick={handleEmailAuth}
-          className="w-full bg-gradient-to-r from-indigo-600 to-purple-700 text-white font-semibold py-4 rounded-xl shadow-lg hover:opacity-90 transition"
+          onClick={handleAuth}
+          disabled={loading}
+          className="w-full bg-gradient-to-r from-indigo-600 to-purple-700 text-white font-semibold py-4 rounded-xl shadow-lg hover:opacity-90 disabled:opacity-50 transition"
         >
-          {isRegistering ? 'Create Account' : 'Login'}
-        </button>
-
-        <div className="text-gray-500 my-6">or</div>
-
-        <button 
-          onClick={handleGoogleLogin}
-          className="w-full border border-gray-800 text-white font-semibold py-4 rounded-xl hover:bg-gray-900 transition flex items-center justify-center gap-2"
-        >
-          Continue with Google
+          {loading ? 'Processing...' : (isRegistering ? 'Create Account' : 'Login')}
         </button>
 
         <p className="text-gray-400 mt-6">

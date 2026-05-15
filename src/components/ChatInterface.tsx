@@ -1,8 +1,7 @@
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'motion/react';
 import { ArrowLeft, Send } from 'lucide-react';
-import { doc, getDoc, updateDoc, arrayUnion, onSnapshot } from 'firebase/firestore';
-import { db, auth, handleFirestoreError, OperationType } from '../firebase';
+import { fetchWithAuth, getCurrentUser } from '../lib/api';
 
 interface ChatInterfaceProps {
   chatId: string;
@@ -15,21 +14,25 @@ export default function ChatInterface({ chatId, otherUser, onBack }: ChatInterfa
   const [newMessage, setNewMessage] = useState('');
   const [gistIds, setGistIds] = useState<string[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const currentUser = getCurrentUser();
 
-  // Subscribe to chat metadata (gistIds)
+  // Subscribe to chat metadata (gistIds) by polling
   useEffect(() => {
-    const chatRef = doc(db, 'chats', chatId);
-    const unsubscribe = onSnapshot(chatRef, (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        if (data.gistIds) {
-          setGistIds(data.gistIds);
+    const fetchChatInfo = async () => {
+      try {
+        const res = await fetchWithAuth(`/chats/${chatId}`);
+        if (res.ok) {
+           const data = await res.json();
+           setGistIds(data.gistIds || []);
         }
+      } catch (err) {
+        console.error('Failed to fetch chat gistIds', err);
       }
-    }, (error) => {
-      handleFirestoreError(error, OperationType.GET, `chats/${chatId}`);
-    });
-    return () => unsubscribe();
+    };
+    
+    fetchChatInfo();
+    const interval = setInterval(fetchChatInfo, 5000);
+    return () => clearInterval(interval);
   }, [chatId]);
 
   // Fetch messages from gists
@@ -38,8 +41,7 @@ export default function ChatInterface({ chatId, otherUser, onBack }: ChatInterfa
     const fetchMessages = async () => {
       try {
          let allMsgs: any[] = [];
-         // Simple fetch: just fetch the latest gist for now (for performance)
-         // In a robust implementation, we'd lazy load older ones.
+         
          for (const gid of gistIds) {
             const res = await fetch(`/api/messages/${gid}`);
             if (res.ok) {
@@ -60,8 +62,6 @@ export default function ChatInterface({ chatId, otherUser, onBack }: ChatInterfa
     
     if (gistIds.length > 0) {
        fetchMessages();
-       // Poll the latest gist every 3 seconds for new messages.
-       // In a real app we might use websockets, but polling gists works here.
        const interval = setInterval(fetchMessages, 3000);
        return () => {
          active = false;
@@ -72,7 +72,7 @@ export default function ChatInterface({ chatId, otherUser, onBack }: ChatInterfa
 
   const sendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newMessage.trim() || !auth.currentUser) return;
+    if (!newMessage.trim() || !currentUser) return;
 
     const messageText = newMessage.trim();
     setNewMessage('');
@@ -80,7 +80,7 @@ export default function ChatInterface({ chatId, otherUser, onBack }: ChatInterfa
     // Optimistic update
     const optimisticMsg = {
         text: messageText,
-        senderId: auth.currentUser.uid,
+        senderId: currentUser.id?.toString(),
         createdAt: Date.now()
     };
     setMessages(prev => [...prev, optimisticMsg]);
@@ -88,7 +88,7 @@ export default function ChatInterface({ chatId, otherUser, onBack }: ChatInterfa
 
     try {
       const currentGistId = gistIds.length > 0 ? gistIds[gistIds.length - 1] : null;
-      const res = await fetch(`/api/messages/${chatId}`, {
+      const res = await fetchWithAuth(`/messages/${chatId}`, {
          method: "POST",
          headers: { "Content-Type": "application/json" },
          body: JSON.stringify({
@@ -99,16 +99,12 @@ export default function ChatInterface({ chatId, otherUser, onBack }: ChatInterfa
       if (!res.ok) throw new Error("Failed to post message");
       const { gistId } = await res.json();
       
-      // If a new gist was created, add it to Firestore
       if (gistId !== currentGistId) {
-         const chatRef = doc(db, 'chats', chatId);
-         try {
-           await updateDoc(chatRef, {
-              gistIds: arrayUnion(gistId)
-           });
-         } catch (error) {
-           handleFirestoreError(error, OperationType.UPDATE, `chats/${chatId}`);
-         }
+         // Update backend chat
+         await fetchWithAuth(`/chats/${chatId}`, {
+           method: 'PATCH',
+           body: JSON.stringify({ gistId })
+         });
       }
     } catch (error) {
       console.error("Gist error:", error);
@@ -138,7 +134,7 @@ export default function ChatInterface({ chatId, otherUser, onBack }: ChatInterfa
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.map((msg, index) => {
-           const isMine = msg.senderId === auth.currentUser?.uid;
+           const isMine = msg.senderId === currentUser?.id?.toString();
            return (
              <div key={msg.id || msg.createdAt || index} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
                 <div className={`max-w-[75%] rounded-2xl p-3 ${isMine ? 'bg-purple-600 rounded-tr-sm text-white' : 'bg-gray-800 rounded-tl-sm text-white'}`}>

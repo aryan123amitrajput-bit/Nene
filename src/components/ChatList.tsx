@@ -3,8 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Search, Edit2, UserPlus, Settings as SettingsIcon, MessageSquare } from 'lucide-react';
 import Settings from './Settings';
 import ChatInterface from './ChatInterface';
-import { collection, query, where, getDocs, addDoc, onSnapshot, doc, getDoc } from 'firebase/firestore';
-import { db, auth, handleFirestoreError, OperationType } from '../firebase';
+import { fetchWithAuth } from '../lib/api';
 
 export default function ChatList() {
   const [activeTab, setActiveTab] = useState<'chats' | 'settings'>('chats');
@@ -13,63 +12,52 @@ export default function ChatList() {
   const [chats, setChats] = useState<any[]>([]);
   const [activeChat, setActiveChat] = useState<{ id: string, otherUser: any } | null>(null);
 
-  useEffect(() => {
-    if (!auth.currentUser) return;
-
-    const chatsRef = collection(db, 'chats');
-    const q = query(chatsRef, where('participants', 'array-contains', auth.currentUser.uid));
-
-    const unsubscribe = onSnapshot(q, async (snapshot) => {
-      try {
-        const chatsData = [];
-        for (const docSnapshot of snapshot.docs) {
-          const data = docSnapshot.data();
-          const otherUserId = data.participants.find((id: string) => id !== auth.currentUser!.uid);
-          
-          let otherUser = { displayName: 'Unknown' };
-          if (otherUserId) {
-            const userDoc = await getDoc(doc(db, 'users', otherUserId));
-            if (userDoc.exists()) {
-              otherUser = userDoc.data() as any;
-            }
-          }
-          
-          chatsData.push({
-            id: docSnapshot.id,
-            ...data,
-            otherUser
-          });
-        }
-        setChats(chatsData);
-      } catch (error) {
-        handleFirestoreError(error, OperationType.LIST, 'chats');
+  const fetchChats = async () => {
+    try {
+      const res = await fetchWithAuth('/chats');
+      if (res.ok) {
+        const data = await res.json();
+        setChats(data.chats);
       }
-    }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'chats');
-    });
+    } catch (error) {
+      console.error('Failed to fetch chats', error);
+    }
+  };
 
-    return () => unsubscribe();
+  useEffect(() => {
+    fetchChats();
+    const interval = setInterval(fetchChats, 5000); // Poll for new chats every 5s
+    return () => clearInterval(interval);
   }, []);
 
   const addPerson = async () => {
     try {
-      const usersRef = collection(db, 'users');
-      const q = query(usersRef, where('uniqueToken', '==', token.toUpperCase()));
-      const querySnapshot = await getDocs(q);
-      
-      if (!querySnapshot.empty) {
-        const targetUser = querySnapshot.docs[0].data();
-        // Create chat
-        await addDoc(collection(db, 'chats'), {
-          participants: [auth.currentUser!.uid, targetUser.uid]
-        });
-        alert('Chat started with ' + targetUser.displayName);
-        setShowAddModal(false);
-      } else {
+      // Find user by token
+      const resUser = await fetchWithAuth(`/users?token=${encodeURIComponent(token.toUpperCase())}`);
+      if (!resUser.ok) {
         alert('User not found');
+        return;
       }
+      const userData = await resUser.json();
+      const targetUser = userData.user;
+
+      // Create chat
+      const resChat = await fetchWithAuth('/chats', {
+        method: 'POST',
+        body: JSON.stringify({ targetUserId: targetUser.id })
+      });
+      if (!resChat.ok) {
+        alert('Failed to create chat');
+        return;
+      }
+
+      alert('Chat started with ' + targetUser.username);
+      setShowAddModal(false);
+      setToken('');
+      fetchChats();
     } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, 'chats');
+      console.error('Add person failed', error);
+      alert('Internal error when adding person');
     }
   };
 
@@ -109,7 +97,7 @@ export default function ChatList() {
               placeholder="Enter unique token"
               value={token}
               onChange={(e) => setToken(e.target.value)}
-              className="w-full bg-gray-950 border border-gray-800 rounded-xl p-4 text-white mb-4"
+              className="w-full bg-gray-950 border border-gray-800 rounded-xl p-4 text-white mb-4 overflow-hidden"
             />
             <div className="flex gap-4">
               <button onClick={() => setShowAddModal(false)} className="flex-1 p-4 bg-gray-800 rounded-xl">Cancel</button>
@@ -127,7 +115,7 @@ export default function ChatList() {
             onClick={() => setActiveChat({ id: chat.id, otherUser: chat.otherUser })}
             className="flex items-center gap-4 p-3 rounded-2xl bg-gray-900/50 backdrop-blur-md shadow-lg border border-white/5 cursor-pointer hover:bg-gray-800 transition"
           >
-            <div className="w-14 h-14 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold text-xl">
+            <div className="w-14 h-14 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold text-xl flex-shrink-0">
               {chat.otherUser.displayName.charAt(0).toUpperCase()}
             </div>
             <div className="flex-1">
